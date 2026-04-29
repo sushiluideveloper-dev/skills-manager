@@ -11,7 +11,7 @@ Visual manager for Claude Code skills and plugins.
 ## Install
 
 ```bash
-claude plugin install github:sushiluidev/skills-manager
+claude plugin install github:sushiluideveloper-dev/skills-manager
 ```
 
 Or from local:
