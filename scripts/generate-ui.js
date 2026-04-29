@@ -334,18 +334,35 @@ input[type=checkbox] { accent-color: #e67e22; cursor: pointer; width: 12px; heig
 .p-dup    { background: #071818; color: #1abc9c; border: 1px solid #0d2e2e; }
 .p-proj   { font-size: 9px; font-weight: 600; padding: 1px 6px; border-radius: 3px; text-transform: none; letter-spacing: 0; white-space: nowrap; }
 /* dup peers */
-.dup-peers { display:flex; flex-wrap:wrap; gap:3px; margin-top:3px; }
-.dup-peer-badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; white-space:nowrap; }
+.dup-peers { display:flex; flex-wrap:wrap; gap:3px; margin-top:4px; }
+.dup-peer-badge { display:inline-flex; align-items:center; gap:3px; font-size: 9px; padding: 1px 4px 1px 6px; border-radius: 3px; white-space:nowrap; }
 .dup-in-global { background:#0d1a0d; color:#27ae60; border:1px solid #1a3320; }
+.peer-rm { font-size:9px; cursor:pointer; opacity:0.5; padding:0 2px; border-radius:2px; line-height:1; background:transparent; border:none; color:inherit; }
+.peer-rm:hover { opacity:1; background:rgba(255,255,255,0.08); }
+/* per-row remove button */
+.btn-rm-row { font-size: 9px; padding: 2px 7px; border-radius: 3px; border: 1px solid #3d1212; background: transparent; color: #c0392b; cursor: pointer; white-space:nowrap; transition: all 0.1s; display:block; width:100%; margin-bottom:3px; }
+.btn-rm-row:hover { border-color: #e74c3c; color: #e74c3c; background: #120808; }
 /* move-to-global button */
-.btn-move { font-size: 9px; padding: 2px 7px; border-radius: 3px; border: 1px solid #1c3c1c; background: transparent; color: #27ae60; cursor: pointer; white-space:nowrap; transition: all 0.1s; margin-left:4px; }
+.btn-move { font-size: 9px; padding: 2px 7px; border-radius: 3px; border: 1px solid #1c3c1c; background: transparent; color: #27ae60; cursor: pointer; white-space:nowrap; transition: all 0.1s; display:block; width:100%; }
 .btn-move:hover { border-color: #2ecc71; color: #2ecc71; background: #0a1a0a; }
 /* actions cell */
-td.act-cell { width: 90px; }
+td.act-cell { width: 100px; }
 /* move panel */
 .move-panel { margin-top: 12px; background: #080808; border: 1px solid #0d2e0d; border-radius: 6px; overflow: hidden; }
 .move-panel .cmd-header { border-bottom-color: #0d2e0d; }
 .move-panel .cmd-body { color: #27ae60; }
+/* confirm modal */
+.confirm-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:100; align-items:center; justify-content:center; }
+.confirm-overlay.show { display:flex; }
+.confirm-box { background:#141414; border:1px solid #2a2a2a; border-radius:8px; padding:20px 24px; max-width:420px; width:90%; }
+.confirm-box h3 { font-size:13px; color:#ddd; margin-bottom:8px; font-weight:600; }
+.confirm-box p  { font-size:11px; color:#666; line-height:1.5; margin-bottom:16px; }
+.confirm-box code { color:#e74c3c; font-family:'SF Mono',monospace; font-size:10px; }
+.confirm-actions { display:flex; gap:8px; justify-content:flex-end; }
+.confirm-yes { font-size:11px; padding:5px 14px; border-radius:4px; border:1px solid #c0392b; background:#120808; color:#e74c3c; cursor:pointer; }
+.confirm-yes:hover { background:#1a0808; border-color:#e74c3c; }
+.confirm-no  { font-size:11px; padding:5px 14px; border-radius:4px; border:1px solid #2a2a2a; background:transparent; color:#666; cursor:pointer; }
+.confirm-no:hover { border-color:#555; color:#ccc; }
 .tok-cell { width: 100px; }
 .tok-wrap { display:flex; align-items:center; gap:5px; }
 .tok-bar-bg { flex:1; height:3px; background:#161616; border-radius:2px; overflow:hidden; min-width:40px; }
@@ -365,6 +382,17 @@ td.act-cell { width: 90px; }
 </style>
 </head>
 <body>
+<!-- confirm modal -->
+<div class="confirm-overlay" id="confirm-overlay">
+  <div class="confirm-box">
+    <h3 id="confirm-title">Confirm removal</h3>
+    <p id="confirm-msg"></p>
+    <div class="confirm-actions">
+      <button class="confirm-no" onclick="confirmNo()">Cancel</button>
+      <button class="confirm-yes" id="confirm-yes-btn" onclick="confirmYes()">Remove</button>
+    </div>
+  </div>
+</div>
 <h1>Claude Skills Manager</h1>
 <div class="meta">Select projects → check rows → Remove Selected → downloads <code>remove-skills.sh</code> → run <code>bash ~/Downloads/remove-skills.sh</code></div>
 <div class="proj-panel">
@@ -439,6 +467,7 @@ const PROJ_COLOR = Object.fromEntries(PROJECTS.map(p => [p.id, p.color]));
 const activeProjects = new Set(["global"]);
 const selected       = new Set();
 let curFilter = "all", curSearch = "", sortCol = null, sortAsc = true;
+let pendingConfirmAction = null;
 
 function buildProjectCards() {
   const grid = document.getElementById("proj-grid");
@@ -474,15 +503,20 @@ function srcPill(s) {
   if (s.src === "plugin") return \`<span class="pill p-plugin">Plugin\${s.ver&&s.ver!=="?" ? " "+s.ver : ""}</span>\${s.enabled===false ? '<span class="disabled-badge">disabled</span>' : ""}\`;
   return \`<span class="pill p-local">\${s.src==="project"?"Project":"Local"}</span>\`;
 }
+function esc(s) { return String(s).replace(/'/g,"\\\\'"); }
 function projPill(s) {
   if (s.isDup && s.dupPeers) {
-    // show ALL projects this skill appears in
-    const pills = s.dupPeers.map(p => {
+    const pills = s.dupPeers.map((p,i) => {
       const isGlobal = p.proj === "global";
       if (isGlobal) return \`<span class="dup-peer-badge dup-in-global">global ✓</span>\`;
       const c = p.projColor || PROJ_COLOR[p.proj] || "#888";
       const isSelf = p.proj === s.proj;
-      return \`<span class="dup-peer-badge" style="background:\${c}18;color:\${c};border:1px solid \${c}\${isSelf?"66":"22"};font-weight:\${isSelf?"700":"400"}">\${p.projLabel || p.proj}\${isSelf?" ←":""}</span>\`;
+      // find the peer skill id for removal
+      const peerSkill = ALL_SKILLS.find(x => x.name===s.name && x.proj===p.proj);
+      const rmBtn = peerSkill
+        ? \`<button class="peer-rm" title="Remove from \${p.projLabel||p.proj}" onclick="removePeer('\${esc(peerSkill.id)}',event)">×</button>\`
+        : "";
+      return \`<span class="dup-peer-badge" style="background:\${c}18;color:\${c};border:1px solid \${c}\${isSelf?"66":"22"};font-weight:\${isSelf?"700":"400"}">\${p.projLabel||p.proj}\${isSelf?" ←":""}\${rmBtn}</span>\`;
     });
     return \`<span class="pill p-dup">Dup \${s.dupPeers.length}×</span><div class="dup-peers">\${pills.join("")}</div>\`;
   }
@@ -491,11 +525,18 @@ function projPill(s) {
   return \`<span class="pill p-proj" style="background:\${color}18;color:\${color};border:1px solid \${color}33">\${label}</span>\`;
 }
 function actionCell(s) {
-  // show → Global button only for project-scope duplicates not already in global
-  if (!s.isDup || s.src !== "project") return "";
-  const alreadyGlobal = (s.dupPeers || []).some(p => p.proj === "global");
-  if (alreadyGlobal) return \`<span style="font-size:9px;color:#27ae60">in global ✓</span>\`;
-  return \`<button class="btn-move" onclick="moveToGlobal('\${s.id.replace(/'/g,"\\\\'")}')">→ Global</button>\`;
+  const parts = [];
+  // per-row remove button (all skills)
+  if (s.src !== undefined) {
+    parts.push(\`<button class="btn-rm-row" onclick="removeOne('\${esc(s.id)}')">✕ Remove</button>\`);
+  }
+  // move-to-global (project duplicates)
+  if (s.isDup && s.src === "project") {
+    const alreadyGlobal = (s.dupPeers||[]).some(p=>p.proj==="global");
+    if (alreadyGlobal) parts.push(\`<span style="font-size:9px;color:#27ae60;display:block;margin-top:2px">in global ✓</span>\`);
+    else parts.push(\`<button class="btn-move" onclick="moveToGlobal('\${esc(s.id)}')">→ Global</button>\`);
+  }
+  return parts.join("");
 }
 function tokCell(s) {
   const t = s.tokens||0;
@@ -616,6 +657,35 @@ function copyCmd() {
     const btn=document.getElementById("copy-btn"); btn.textContent="Copied!"; btn.classList.add("copied");
     setTimeout(()=>{btn.textContent="Copy";btn.classList.remove("copied");},2000);
   });
+}
+function downloadOneScript(s) {
+  const loc = s.proj === "global" ? "~/.claude/skills/" : (s.projLabel || s.proj);
+  const script = ["#!/bin/bash", \`# Remove: \${s.name}\`, \`# From: \${loc}\`, \`# Tokens freed: ~\${s.tokens>=1000?(s.tokens/1000).toFixed(1)+"k":s.tokens||0}\`, "", s.rmcmd, \`echo "✓ Removed \${s.name}"\`].join("\\n");
+  const a = document.createElement("a");
+  a.href = "data:text/plain;charset=utf-8," + encodeURIComponent(script);
+  a.download = "remove-" + s.name + ".sh";
+  a.click();
+}
+function removeOne(id) {
+  const s = ALL_SKILLS.find(x => x.id === id);
+  if (!s) return;
+  const loc = s.proj === "global" ? "~/.claude/skills/" : (s.projLabel || s.proj);
+  document.getElementById("confirm-title").textContent = "Remove " + s.name + "?";
+  document.getElementById("confirm-msg").innerHTML = \`Remove from <strong>\${loc}</strong>?<br><br><code>\${s.rmcmd}</code>\`;
+  pendingConfirmAction = () => downloadOneScript(s);
+  document.getElementById("confirm-overlay").classList.add("show");
+}
+function removePeer(id, event) {
+  event.stopPropagation();
+  removeOne(id);
+}
+function confirmYes() {
+  document.getElementById("confirm-overlay").classList.remove("show");
+  if (pendingConfirmAction) { pendingConfirmAction(); pendingConfirmAction = null; }
+}
+function confirmNo() {
+  document.getElementById("confirm-overlay").classList.remove("show");
+  pendingConfirmAction = null;
 }
 buildProjectCards(); render();
 </script>
