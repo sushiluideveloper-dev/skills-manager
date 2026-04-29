@@ -17,6 +17,23 @@ claude plugin marketplace add sushiluideveloper-dev/skills-manager
 claude plugin install skills-manager
 ```
 
+## Update
+
+Plugins do **not** auto-update. Run this to get the latest version:
+
+```bash
+claude plugin update skills-manager
+```
+
+Or reinstall:
+
+```bash
+claude plugin remove skills-manager@sushiluideveloper-dev
+claude plugin install skills-manager
+```
+
+---
+
 Or from local path:
 
 ```bash
