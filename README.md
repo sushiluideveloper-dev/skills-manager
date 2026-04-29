@@ -10,11 +10,14 @@ Visual manager for Claude Code skills and plugins.
 
 ## Install
 
+Two steps — add as marketplace, then install:
+
 ```bash
-claude plugin install github:sushiluideveloper-dev/skills-manager
+claude plugin marketplace add sushiluideveloper-dev/skills-manager
+claude plugin install skills-manager
 ```
 
-Or from local:
+Or from local path:
 
 ```bash
 claude plugin install /path/to/skills-manager/plugin
