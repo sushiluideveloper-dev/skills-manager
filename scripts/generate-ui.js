@@ -204,10 +204,44 @@ const plugins       = scanPlugins();
 const projectSkills = scanProjectSkills();
 const allSkills     = [...plugins, ...globalSkills, ...projectSkills];
 
-// detect duplicates
-const nameCount = {};
-allSkills.forEach(s => { nameCount[s.name] = (nameCount[s.name] || 0) + 1; });
-allSkills.forEach(s => { s.isDup = nameCount[s.name] > 1; });
+// detect duplicates — group by name
+const dupMap = {}; // name -> [skill, skill, ...]
+allSkills.forEach(s => { (dupMap[s.name] = dupMap[s.name] || []).push(s); });
+
+allSkills.forEach(s => {
+  const peers = dupMap[s.name];
+  s.isDup = peers.length > 1;
+  if (!s.isDup) return;
+
+  // peers info for display
+  s.dupPeers = peers.map(p => ({
+    proj:      p.proj,
+    projLabel: p.projLabel || (p.proj === "global" ? "Global" : p.proj),
+    projColor: p.projColor || "#888",
+    src:       p.src,
+  }));
+
+  // move-to-global script: copy from this skill's dir, delete all project copies
+  if (s.src === "project") {
+    const skillFolder = s.folderName || s.name;
+    const globalDest  = `~/.claude/skills/${skillFolder}`;
+    // find the source dir (this instance's actual path from rmcmd)
+    const srcDir = s.rmcmd.replace(/^rm -rf /, "").replace(/'/g, "");
+    const projectCopies = peers
+      .filter(p => p.src === "project")
+      .map(p => `rm -rf '${p.rmcmd.replace(/^rm -rf /, "").replace(/'/g, "")}'`);
+
+    s.movecmd = [
+      `# Move ${skillFolder} → global (consolidate ${peers.length} copies)`,
+      `if [ ! -d ${globalDest} ]; then`,
+      `  cp -rL '${srcDir}' ${globalDest}`,
+      `  echo "Copied ${skillFolder} to global"`,
+      `fi`,
+      ...projectCopies,
+      `echo "✓ ${skillFolder} consolidated to global"`,
+    ].join("\n");
+  }
+});
 
 // build project list
 const projectMap = {};
@@ -230,7 +264,7 @@ const projects = [
 
 // ── generate HTML ─────────────────────────────────────────────────────────────
 
-const dataJSON    = JSON.stringify(allSkills);
+const dataJSON     = JSON.stringify(allSkills);
 const projectsJSON = JSON.stringify(projects);
 
 const html = `<!DOCTYPE html>
@@ -299,6 +333,19 @@ input[type=checkbox] { accent-color: #e67e22; cursor: pointer; width: 12px; heig
 .p-local  { background: #0d0d1a; color: #4a6fa5; border: 1px solid #141426; }
 .p-dup    { background: #071818; color: #1abc9c; border: 1px solid #0d2e2e; }
 .p-proj   { font-size: 9px; font-weight: 600; padding: 1px 6px; border-radius: 3px; text-transform: none; letter-spacing: 0; white-space: nowrap; }
+/* dup peers */
+.dup-peers { display:flex; flex-wrap:wrap; gap:3px; margin-top:3px; }
+.dup-peer-badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; white-space:nowrap; }
+.dup-in-global { background:#0d1a0d; color:#27ae60; border:1px solid #1a3320; }
+/* move-to-global button */
+.btn-move { font-size: 9px; padding: 2px 7px; border-radius: 3px; border: 1px solid #1c3c1c; background: transparent; color: #27ae60; cursor: pointer; white-space:nowrap; transition: all 0.1s; margin-left:4px; }
+.btn-move:hover { border-color: #2ecc71; color: #2ecc71; background: #0a1a0a; }
+/* actions cell */
+td.act-cell { width: 90px; }
+/* move panel */
+.move-panel { margin-top: 12px; background: #080808; border: 1px solid #0d2e0d; border-radius: 6px; overflow: hidden; }
+.move-panel .cmd-header { border-bottom-color: #0d2e0d; }
+.move-panel .cmd-body { color: #27ae60; }
 .tok-cell { width: 100px; }
 .tok-wrap { display:flex; align-items:center; gap:5px; }
 .tok-bar-bg { flex:1; height:3px; background:#161616; border-radius:2px; overflow:hidden; min-width:40px; }
@@ -352,8 +399,9 @@ input[type=checkbox] { accent-color: #e67e22; cursor: pointer; width: 12px; heig
       <th onclick="sortBy('name')">Skill ↕</th>
       <th>Description</th>
       <th onclick="sortBy('src')">Source ↕</th>
-      <th onclick="sortBy('proj')">Project ↕</th>
+      <th onclick="sortBy('proj')">Used In ↕</th>
       <th onclick="sortBy('tok')" class="tok-cell">Tokens ↕</th>
+      <th class="act-cell">Actions</th>
     </tr>
   </thead>
   <tbody id="tbody"></tbody>
@@ -371,6 +419,17 @@ input[type=checkbox] { accent-color: #e67e22; cursor: pointer; width: 12px; heig
     <span>After download: <code style="color:#555">bash ~/Downloads/remove-skills.sh</code></span>
     <span id="tok-saved" style="color:#2ecc71;font-size:10px"></span>
   </div>
+</div>
+<div class="move-panel" id="move-panel" style="display:none">
+  <div class="cmd-header">
+    <span>move-<span id="move-skill-name">skill</span>-to-global.sh — copies to ~/.claude/skills, removes project copies</span>
+    <div style="display:flex;gap:6px">
+      <button class="copy-btn" id="copy-move-btn" onclick="copyMove()">Copy</button>
+      <button class="copy-btn" onclick="document.getElementById('move-panel').style.display='none'" style="border-color:#333">✕</button>
+    </div>
+  </div>
+  <div class="cmd-body move-body" id="move-body" style="color:#27ae60"></div>
+  <div class="cmd-note"><span>After download: <code style="color:#555">bash ~/Downloads/move-SKILL-to-global.sh</code></span></div>
 </div>
 <script>
 const ALL_SKILLS = ${dataJSON};
@@ -416,9 +475,27 @@ function srcPill(s) {
   return \`<span class="pill p-local">\${s.src==="project"?"Project":"Local"}</span>\`;
 }
 function projPill(s) {
+  if (s.isDup && s.dupPeers) {
+    // show ALL projects this skill appears in
+    const pills = s.dupPeers.map(p => {
+      const isGlobal = p.proj === "global";
+      if (isGlobal) return \`<span class="dup-peer-badge dup-in-global">global ✓</span>\`;
+      const c = p.projColor || PROJ_COLOR[p.proj] || "#888";
+      const isSelf = p.proj === s.proj;
+      return \`<span class="dup-peer-badge" style="background:\${c}18;color:\${c};border:1px solid \${c}\${isSelf?"66":"22"};font-weight:\${isSelf?"700":"400"}">\${p.projLabel || p.proj}\${isSelf?" ←":""}</span>\`;
+    });
+    return \`<span class="pill p-dup">Dup \${s.dupPeers.length}×</span><div class="dup-peers">\${pills.join("")}</div>\`;
+  }
   const color = PROJ_COLOR[s.proj] || "#888";
   const label = PROJECTS.find(p=>p.id===s.proj)?.label || s.proj;
-  return \`<span class="pill p-proj" style="background:\${color}18;color:\${color};border:1px solid \${color}33">\${label}</span>\${s.isDup ? '<span class="pill p-dup">Dup</span>' : ""}\`;
+  return \`<span class="pill p-proj" style="background:\${color}18;color:\${color};border:1px solid \${color}33">\${label}</span>\`;
+}
+function actionCell(s) {
+  // show → Global button only for project-scope duplicates not already in global
+  if (!s.isDup || s.src !== "project") return "";
+  const alreadyGlobal = (s.dupPeers || []).some(p => p.proj === "global");
+  if (alreadyGlobal) return \`<span style="font-size:9px;color:#27ae60">in global ✓</span>\`;
+  return \`<button class="btn-move" onclick="moveToGlobal('\${s.id.replace(/'/g,"\\\\'")}')">→ Global</button>\`;
 }
 function tokCell(s) {
   const t = s.tokens||0;
@@ -452,7 +529,8 @@ function render() {
       <td><span class="desc">\${s.desc||""}</span></td>
       <td>\${srcPill(s)}</td>
       <td>\${projPill(s)}</td>
-      <td class="tok-cell">\${tokCell(s)}</td>\`;
+      <td class="tok-cell">\${tokCell(s)}</td>
+      <td class="act-cell">\${actionCell(s)}</td>\`;
     tbody.appendChild(tr);
   });
   document.getElementById("cnt-all").textContent = data.length;
@@ -490,6 +568,27 @@ function updateStats() {
 function setFilter(f,el) { curFilter=f; document.querySelectorAll(".filter-btn").forEach(b=>b.classList.remove("active")); el.classList.add("active"); render(); }
 function doSearch(q) { curSearch=q.toLowerCase().trim(); render(); }
 function sortBy(col) { sortCol===col?sortAsc=!sortAsc:(sortCol=col,sortAsc=true); render(); }
+
+function moveToGlobal(id) {
+  const s = ALL_SKILLS.find(x => x.id === id);
+  if (!s || !s.movecmd) return;
+  const script = ["#!/bin/bash","# Move skill to global — consolidate duplicate",\`# Skill: \${s.name}  (\${(s.dupPeers||[]).length} copies)\`,"",s.movecmd].join("\\n");
+  document.getElementById("move-body").textContent = script;
+  document.getElementById("move-skill-name").textContent = s.name;
+  document.getElementById("move-panel").style.display = "block";
+  document.getElementById("move-panel").scrollIntoView({behavior:"smooth"});
+  // auto-download
+  const a = document.createElement("a");
+  a.href = "data:text/plain;charset=utf-8,"+encodeURIComponent(script);
+  a.download = "move-"+s.name+"-to-global.sh"; a.click();
+}
+function copyMove() {
+  navigator.clipboard.writeText(document.getElementById("move-body").textContent).then(()=>{
+    const btn=document.getElementById("copy-move-btn"); btn.textContent="Copied!"; btn.classList.add("copied");
+    setTimeout(()=>{btn.textContent="Copy";btn.classList.remove("copied");},2000);
+  });
+}
+
 function buildCmd() {
   const skills = ALL_SKILLS.filter(s=>selected.has(s.id));
   if (!skills.length) return;
