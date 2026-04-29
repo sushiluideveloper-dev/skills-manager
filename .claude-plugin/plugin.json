@@ -1,0 +1,11 @@
+{
+  "name": "skills-manager",
+  "description": "Visual manager for Claude Code skills and plugins. Browse all global + project skills, see token costs, detect duplicates, and generate removal scripts.",
+  "version": "1.0.0",
+  "author": {
+    "name": "sushiluidev",
+    "url": "https://github.com/sushiluidev"
+  },
+  "license": "MIT",
+  "keywords": ["skills", "plugins", "management", "tokens", "cleanup", "productivity"]
+}

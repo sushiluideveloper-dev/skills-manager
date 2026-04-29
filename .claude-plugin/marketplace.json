@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "skills-manager",
+  "description": "Visual manager for Claude Code skills and plugins. Browse all global + project skills, see token costs per skill, detect duplicates, filter by category, and generate removal scripts with one click.",
+  "owner": {
+    "name": "sushiluidev",
+    "url": "https://github.com/sushiluidev"
+  },
+  "plugins": [
+    {
+      "name": "skills-manager",
+      "description": "Browse, audit, and remove Claude Code skills and plugins. Token cost visualization, duplicate detection, multi-project support.",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}
