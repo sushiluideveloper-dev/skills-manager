@@ -544,8 +544,11 @@ function showBadgeMenu(event, skillId, hasGlobal) {
   document.getElementById("badge-menu").innerHTML = html;
   const rect = event.currentTarget.getBoundingClientRect();
   const menu = document.getElementById("badge-menu");
-  menu.style.top  = (rect.bottom + window.scrollY + 4) + "px";
-  menu.style.left = rect.left + "px";
+  const viewH = window.innerHeight;
+  const menuH = 90;
+  const top = rect.bottom + 4 + menuH > viewH ? rect.top - menuH - 2 : rect.bottom + 4;
+  menu.style.top  = top + "px";
+  menu.style.left = Math.min(rect.left, window.innerWidth - 180) + "px";
   menu.classList.add("show");
 }
 function hideBadgeMenu() { document.getElementById("badge-menu").classList.remove("show"); badgeMenuSkillId = null; }
