@@ -335,18 +335,25 @@ input[type=checkbox] { accent-color: #e67e22; cursor: pointer; width: 12px; heig
 .p-proj   { font-size: 9px; font-weight: 600; padding: 1px 6px; border-radius: 3px; text-transform: none; letter-spacing: 0; white-space: nowrap; }
 /* dup peers */
 .dup-peers { display:flex; flex-wrap:wrap; gap:3px; margin-top:4px; }
-.dup-peer-badge { display:inline-flex; align-items:center; gap:3px; font-size: 9px; padding: 1px 4px 1px 6px; border-radius: 3px; white-space:nowrap; }
+.dup-peer-badge { display:inline-flex; align-items:center; gap:2px; font-size: 9px; padding: 2px 7px; border-radius: 3px; white-space:nowrap; }
 .dup-in-global { background:#0d1a0d; color:#27ae60; border:1px solid #1a3320; }
-.peer-rm { font-size:9px; cursor:pointer; opacity:0.5; padding:0 2px; border-radius:2px; line-height:1; background:transparent; border:none; color:inherit; }
-.peer-rm:hover { opacity:1; background:rgba(255,255,255,0.08); }
-/* per-row remove button */
-.btn-rm-row { font-size: 9px; padding: 2px 7px; border-radius: 3px; border: 1px solid #3d1212; background: transparent; color: #c0392b; cursor: pointer; white-space:nowrap; transition: all 0.1s; display:block; width:100%; margin-bottom:3px; }
-.btn-rm-row:hover { border-color: #e74c3c; color: #e74c3c; background: #120808; }
-/* move-to-global button */
-.btn-move { font-size: 9px; padding: 2px 7px; border-radius: 3px; border: 1px solid #1c3c1c; background: transparent; color: #27ae60; cursor: pointer; white-space:nowrap; transition: all 0.1s; display:block; width:100%; }
-.btn-move:hover { border-color: #2ecc71; color: #2ecc71; background: #0a1a0a; }
-/* actions cell */
-td.act-cell { width: 100px; }
+.badge-clickable { cursor:pointer; transition: filter 0.1s; }
+.badge-clickable:hover { filter: brightness(1.4); }
+/* row delete icon — shows on hover, near checkbox */
+td.cb-cell { width: 44px; white-space:nowrap; }
+.row-del-btn { font-size:11px; width:16px; height:16px; line-height:1; border-radius:3px; border:none; background:transparent; color:#3a1010; cursor:pointer; padding:0; opacity:0; transition: opacity 0.1s, color 0.1s, background 0.1s; vertical-align:middle; margin-left:3px; }
+tr:hover .row-del-btn { opacity:1; color:#c0392b; }
+.row-del-btn:hover { background:rgba(192,57,43,0.18) !important; color:#e74c3c !important; }
+/* badge dropdown menu */
+.badge-menu { position:fixed; background:#1a1a1a; border:1px solid #2a2a2a; border-radius:6px; padding:4px; z-index:300; display:none; min-width:170px; box-shadow:0 6px 20px rgba(0,0,0,0.6); }
+.badge-menu.show { display:block; }
+.badge-menu-label { font-size:9px; color:#444; padding:3px 10px 2px; text-transform:uppercase; letter-spacing:0.07em; }
+.badge-menu button { display:block; width:100%; text-align:left; padding:6px 10px; font-size:11px; background:transparent; border:none; border-radius:4px; cursor:pointer; color:#aaa; font-family:inherit; }
+.badge-menu button:hover { background:#252525; color:#fff; }
+.badge-menu .bm-rm { color:#c0392b; }
+.badge-menu .bm-rm:hover { background:#1a0808; color:#e74c3c; }
+.badge-menu .bm-global { color:#27ae60; }
+.badge-menu .bm-global:hover { background:#0a1a0a; color:#2ecc71; }
 /* move panel */
 .move-panel { margin-top: 12px; background: #080808; border: 1px solid #0d2e0d; border-radius: 6px; overflow: hidden; }
 .move-panel .cmd-header { border-bottom-color: #0d2e0d; }
@@ -382,6 +389,8 @@ td.act-cell { width: 100px; }
 </style>
 </head>
 <body>
+<!-- badge dropdown menu -->
+<div class="badge-menu" id="badge-menu"></div>
 <!-- confirm modal -->
 <div class="confirm-overlay" id="confirm-overlay">
   <div class="confirm-box">
@@ -429,7 +438,6 @@ td.act-cell { width: 100px; }
       <th onclick="sortBy('src')">Source ↕</th>
       <th onclick="sortBy('proj')">Used In ↕</th>
       <th onclick="sortBy('tok')" class="tok-cell">Tokens ↕</th>
-      <th class="act-cell">Actions</th>
     </tr>
   </thead>
   <tbody id="tbody"></tbody>
@@ -506,17 +514,14 @@ function srcPill(s) {
 function esc(s) { return String(s).replace(/'/g,"\\\\'"); }
 function projPill(s) {
   if (s.isDup && s.dupPeers) {
-    const pills = s.dupPeers.map((p,i) => {
-      const isGlobal = p.proj === "global";
-      if (isGlobal) return \`<span class="dup-peer-badge dup-in-global">global ✓</span>\`;
+    const hasGlobal = s.dupPeers.some(p => p.proj === "global");
+    const pills = s.dupPeers.map(p => {
+      if (p.proj === "global") return \`<span class="dup-peer-badge dup-in-global" title="Already in global">global ✓</span>\`;
       const c = p.projColor || PROJ_COLOR[p.proj] || "#888";
       const isSelf = p.proj === s.proj;
-      // find the peer skill id for removal
       const peerSkill = ALL_SKILLS.find(x => x.name===s.name && x.proj===p.proj);
-      const rmBtn = peerSkill
-        ? \`<button class="peer-rm" title="Remove from \${p.projLabel||p.proj}" onclick="removePeer('\${esc(peerSkill.id)}',event)">×</button>\`
-        : "";
-      return \`<span class="dup-peer-badge" style="background:\${c}18;color:\${c};border:1px solid \${c}\${isSelf?"66":"22"};font-weight:\${isSelf?"700":"400"}">\${p.projLabel||p.proj}\${isSelf?" ←":""}\${rmBtn}</span>\`;
+      const pid = peerSkill ? esc(peerSkill.id) : "";
+      return \`<span class="dup-peer-badge badge-clickable" style="background:\${c}18;color:\${c};border:1px solid \${c}\${isSelf?"55":"22"};font-weight:\${isSelf?"700":"400"}" onclick="showBadgeMenu(event,'\${pid}',\${hasGlobal})" title="Options ▾">\${p.projLabel||p.proj}\${isSelf?" ←":""} ▾</span>\`;
     });
     return \`<span class="pill p-dup">Dup \${s.dupPeers.length}×</span><div class="dup-peers">\${pills.join("")}</div>\`;
   }
@@ -524,20 +529,28 @@ function projPill(s) {
   const label = PROJECTS.find(p=>p.id===s.proj)?.label || s.proj;
   return \`<span class="pill p-proj" style="background:\${color}18;color:\${color};border:1px solid \${color}33">\${label}</span>\`;
 }
-function actionCell(s) {
-  const parts = [];
-  // per-row remove button (all skills)
-  if (s.src !== undefined) {
-    parts.push(\`<button class="btn-rm-row" onclick="removeOne('\${esc(s.id)}')">✕ Remove</button>\`);
-  }
-  // move-to-global (project duplicates)
-  if (s.isDup && s.src === "project") {
-    const alreadyGlobal = (s.dupPeers||[]).some(p=>p.proj==="global");
-    if (alreadyGlobal) parts.push(\`<span style="font-size:9px;color:#27ae60;display:block;margin-top:2px">in global ✓</span>\`);
-    else parts.push(\`<button class="btn-move" onclick="moveToGlobal('\${esc(s.id)}')">→ Global</button>\`);
-  }
-  return parts.join("");
+let badgeMenuSkillId = null;
+function showBadgeMenu(event, skillId, hasGlobal) {
+  event.stopPropagation();
+  if (!skillId) return;
+  badgeMenuSkillId = skillId;
+  const s = ALL_SKILLS.find(x => x.id === skillId);
+  if (!s) return;
+  const label = s.projLabel || s.proj;
+  let html = \`<div class="badge-menu-label">\${s.name}</div>\`;
+  html += \`<button class="bm-rm" onclick="badgeMenuRemove()">✕ Remove from \${label}</button>\`;
+  if (!hasGlobal && s.movecmd) html += \`<button class="bm-global" onclick="badgeMenuGlobal()">→ Move to Global</button>\`;
+  document.getElementById("badge-menu").innerHTML = html;
+  const rect = event.currentTarget.getBoundingClientRect();
+  const menu = document.getElementById("badge-menu");
+  menu.style.top  = (rect.bottom + window.scrollY + 4) + "px";
+  menu.style.left = rect.left + "px";
+  menu.classList.add("show");
 }
+function hideBadgeMenu() { document.getElementById("badge-menu").classList.remove("show"); badgeMenuSkillId = null; }
+function badgeMenuRemove() { const id = badgeMenuSkillId; hideBadgeMenu(); if (id) removeOne(id); }
+function badgeMenuGlobal() { const id = badgeMenuSkillId; hideBadgeMenu(); if (id) moveToGlobal(id); }
+document.addEventListener("click", e => { if (!document.getElementById("badge-menu").contains(e.target)) hideBadgeMenu(); });
 function tokCell(s) {
   const t = s.tokens||0;
   const pct = Math.round(t/MAX_TOK*100);
@@ -565,13 +578,12 @@ function render() {
     if (!show) tr.classList.add("hidden");
     if (selected.has(s.id)) tr.classList.add("sel-row");
     tr.innerHTML = \`
-      <td class="cb-cell"><input type="checkbox" id="cb-\${s.id}" \${selected.has(s.id)?"checked":""} onchange="toggle('\${s.id}',this)"></td>
+      <td class="cb-cell"><input type="checkbox" id="cb-\${s.id}" \${selected.has(s.id)?"checked":""} onchange="toggle('\${s.id}',this)"><button class="row-del-btn" title="Remove \${s.name}" onclick="removeOne('\${esc(s.id)}')">✕</button></td>
       <td><span class="skill-name">\${s.name}\${s.ns?\`<span class="ns-label"> · \${s.ns}</span>\`:""}</span></td>
       <td><span class="desc">\${s.desc||""}</span></td>
       <td>\${srcPill(s)}</td>
       <td>\${projPill(s)}</td>
-      <td class="tok-cell">\${tokCell(s)}</td>
-      <td class="act-cell">\${actionCell(s)}</td>\`;
+      <td class="tok-cell">\${tokCell(s)}</td>\`;
     tbody.appendChild(tr);
   });
   document.getElementById("cnt-all").textContent = data.length;
@@ -673,11 +685,10 @@ function removeOne(id) {
   document.getElementById("confirm-title").textContent = "Remove " + s.name + "?";
   document.getElementById("confirm-msg").innerHTML = \`Remove from <strong>\${loc}</strong>?<br><br><code>\${s.rmcmd}</code>\`;
   pendingConfirmAction = () => downloadOneScript(s);
+  const yesBtn = document.getElementById("confirm-yes-btn");
+  yesBtn.disabled = true; yesBtn.style.opacity = "0.35";
   document.getElementById("confirm-overlay").classList.add("show");
-}
-function removePeer(id, event) {
-  event.stopPropagation();
-  removeOne(id);
+  setTimeout(() => { yesBtn.disabled = false; yesBtn.style.opacity = "1"; }, 1200);
 }
 function confirmYes() {
   document.getElementById("confirm-overlay").classList.remove("show");
