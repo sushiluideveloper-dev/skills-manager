@@ -341,9 +341,10 @@ input[type=checkbox] { accent-color: #e67e22; cursor: pointer; width: 12px; heig
 .badge-clickable:hover { filter: brightness(1.4); }
 /* row delete icon — shows on hover, near checkbox */
 td.cb-cell { width: 44px; white-space:nowrap; }
-.row-del-btn { font-size:11px; width:16px; height:16px; line-height:1; border-radius:3px; border:none; background:transparent; color:#3a1010; cursor:pointer; padding:0; opacity:0; transition: opacity 0.1s, color 0.1s, background 0.1s; vertical-align:middle; margin-left:3px; }
-tr:hover .row-del-btn { opacity:1; color:#c0392b; }
-.row-del-btn:hover { background:rgba(192,57,43,0.18) !important; color:#e74c3c !important; }
+.row-del-btn { display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border-radius:4px; border:none; background:transparent; color:#2a0a0a; cursor:pointer; padding:0; opacity:0; transition: opacity 0.12s, color 0.12s, background 0.12s; vertical-align:middle; margin-left:4px; flex-shrink:0; }
+tr:hover .row-del-btn { opacity:1; color:#922b21; }
+.row-del-btn:hover { background:rgba(192,57,43,0.15) !important; color:#e74c3c !important; }
+.row-del-btn svg { pointer-events:none; }
 /* badge dropdown menu */
 .badge-menu { position:fixed; background:#1a1a1a; border:1px solid #2a2a2a; border-radius:6px; padding:4px; z-index:300; display:none; min-width:170px; box-shadow:0 6px 20px rgba(0,0,0,0.6); }
 .badge-menu.show { display:block; }
@@ -578,7 +579,7 @@ function render() {
     if (!show) tr.classList.add("hidden");
     if (selected.has(s.id)) tr.classList.add("sel-row");
     tr.innerHTML = \`
-      <td class="cb-cell"><input type="checkbox" id="cb-\${s.id}" \${selected.has(s.id)?"checked":""} onchange="toggle('\${s.id}',this)"><button class="row-del-btn" title="Remove \${s.name}" onclick="removeOne('\${esc(s.id)}')">✕</button></td>
+      <td class="cb-cell"><input type="checkbox" id="cb-\${s.id}" \${selected.has(s.id)?"checked":""} onchange="toggle('\${s.id}',this)"><button class="row-del-btn" title="Remove \${s.name}" onclick="removeOne('\${esc(s.id)}')"><svg width="12" height="12" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1 3.5h12M5 3.5V2.5a.5.5 0 01.5-.5h3a.5.5 0 01.5.5v1M2.5 3.5l1 8.5h7l1-8.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.5 6.5v4M8.5 6.5v4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></button></td>
       <td><span class="skill-name">\${s.name}\${s.ns?\`<span class="ns-label"> · \${s.ns}</span>\`:""}</span></td>
       <td><span class="desc">\${s.desc||""}</span></td>
       <td>\${srcPill(s)}</td>
@@ -706,7 +707,7 @@ buildProjectCards(); render();
 // ── write and open ────────────────────────────────────────────────────────────
 
 const outDir  = path.join(os.tmpdir(), "claude-skills-manager");
-const outFile = path.join(outDir, "index.html");
+const outFile = path.join(outDir, `index-${Date.now()}.html`);
 fs.mkdirSync(outDir, { recursive: true });
 fs.writeFileSync(outFile, html, "utf8");
 
